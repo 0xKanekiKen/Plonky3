@@ -1,5 +1,5 @@
 #[cfg(not(feature = "parallel"))]
-use core::{
+pub use core::{
     iter::{FlatMap, IntoIterator, Iterator},
     slice::{Chunks, ChunksExact, ChunksExactMut, ChunksMut, Windows},
 };
