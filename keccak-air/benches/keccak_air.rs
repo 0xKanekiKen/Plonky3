@@ -39,12 +39,14 @@ fn keccak_prover_bench(input: Vec<[u64; 25]>) -> Result<(), VerificationError> {
     type Perm = Poseidon<Val, MyMds, 16, 5>;
     let perm = Perm::new_from_rng(4, 22, mds, &mut thread_rng());
 
+    // If we use Keccak256Hash, uncomment the following:
     // type MyHash = SerializingHasher32<Val, Keccak256Hash>;
     // let hash = MyHash::new(Keccak256Hash {});
 
     // type MyCompress = CompressionFunctionFromHasher<Val, MyHash, 2, 8>;
     // let compress = MyCompress::new(hash);
 
+    // If we use PoseidonHash, uncomment the following:
     type MyHash = PaddingFreeSponge<Val, Perm, 16, 8, 8>;
     let hash = MyHash::new(perm.clone());
 

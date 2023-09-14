@@ -183,8 +183,9 @@ mod tests {
     use p3_mds::coset_mds::CosetMds;
     use p3_merkle_tree::MerkleTreeMmcs;
     use p3_poseidon::Poseidon;
-    use p3_symmetric::compression::CompressionFunctionFromHasher;
+    use p3_symmetric::compression::TruncatedPermutation;
     use p3_symmetric::hasher::SerializingHasher32;
+    use p3_symmetric::{compression::CompressionFunctionFromHasher, sponge::PaddingFreeSponge};
     use p3_uni_stark::{prove, verify, StarkConfigImpl, VerificationError};
     use rand::thread_rng;
 
@@ -200,11 +201,17 @@ mod tests {
         type Perm = Poseidon<Val, MyMds, 16, 5>;
         let perm = Perm::new_from_rng(4, 22, mds, &mut thread_rng()); // TODO: Use deterministic RNG
 
-        type MyHash = SerializingHasher32<Val, Keccak256Hash>;
-        let hash = MyHash::new(Keccak256Hash {});
+        // type MyHash = SerializingHasher32<Val, Keccak256Hash>;
+        // let hash = MyHash::new(Keccak256Hash {});
 
-        type MyCompress = CompressionFunctionFromHasher<Val, MyHash, 2, 8>;
-        let compress = MyCompress::new(hash);
+        // type MyCompress = CompressionFunctionFromHasher<Val, MyHash, 2, 8>;
+        // let compress = MyCompress::new(hash);
+
+        type MyHash = PaddingFreeSponge<Val, Perm, 16, 8, 8>;
+        let hash = MyHash::new(perm.clone());
+
+        type MyCompress = TruncatedPermutation<Val, Perm, 2, 8, 16>;
+        let compress = MyCompress::new(perm.clone());
 
         type MyMmcs = MerkleTreeMmcs<Val, [Val; 8], MyHash, MyCompress>;
         let mmcs = MyMmcs::new(hash, compress);
