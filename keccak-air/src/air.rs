@@ -169,3 +169,70 @@ impl<AB: AirBuilder> Air<AB> for KeccakAir {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{generate_trace_rows, KeccakAir};
+    use alloc::vec::Vec;
+    use p3_baby_bear::BabyBear;
+    use p3_challenger::DuplexChallenger;
+    use p3_dft::Radix2Bowers;
+    use p3_fri::{FriBasedPcs, FriConfigImpl, FriLdt};
+    use p3_keccak::Keccak256Hash;
+    use p3_ldt::QuotientMmcs;
+    use p3_mds::coset_mds::CosetMds;
+    use p3_merkle_tree::MerkleTreeMmcs;
+    use p3_poseidon::Poseidon;
+    use p3_symmetric::compression::CompressionFunctionFromHasher;
+    use p3_symmetric::hasher::SerializingHasher32;
+    use p3_uni_stark::{prove, verify, StarkConfigImpl, VerificationError};
+    use rand::thread_rng;
+
+    #[test]
+    fn test_keccak_bench() -> Result<(), VerificationError> {
+        type Val = BabyBear;
+        type Domain = Val;
+        type Challenge = Val;
+
+        type MyMds = CosetMds<Val, 16>;
+        let mds = MyMds::default();
+
+        type Perm = Poseidon<Val, MyMds, 16, 5>;
+        let perm = Perm::new_from_rng(4, 22, mds, &mut thread_rng()); // TODO: Use deterministic RNG
+
+        type MyHash = SerializingHasher32<Val, Keccak256Hash>;
+        let hash = MyHash::new(Keccak256Hash {});
+
+        type MyCompress = CompressionFunctionFromHasher<Val, MyHash, 2, 8>;
+        let compress = MyCompress::new(hash);
+
+        type MyMmcs = MerkleTreeMmcs<Val, [Val; 8], MyHash, MyCompress>;
+        let mmcs = MyMmcs::new(hash, compress);
+
+        type Dft = Radix2Bowers;
+        let dft = Dft {};
+
+        type Challenger = DuplexChallenger<Val, Perm, 16>;
+
+        type Quotient = QuotientMmcs<Domain, Challenge, MyMmcs>;
+        type MyFriConfig = FriConfigImpl<Val, Domain, Challenge, Quotient, MyMmcs, Challenger>;
+        let fri_config = MyFriConfig::new(40, mmcs.clone());
+        let ldt = FriLdt { config: fri_config };
+
+        type Pcs = FriBasedPcs<MyFriConfig, MyMmcs, Dft, Challenger>;
+        type MyConfig = StarkConfigImpl<Val, Domain, Challenge, Pcs, Dft, Challenger>;
+
+        const NUM_PERMS: usize = 85;
+
+        let input: Vec<[u64; 25]> = (0..NUM_PERMS).map(|_| rand::random()).collect();
+        let trace = generate_trace_rows::<Val>(input, 8);
+
+        let pcs = Pcs::new(dft, 1, mmcs, ldt);
+        let config = StarkConfigImpl::new(pcs, Dft {});
+        let mut challenger = Challenger::new(perm.clone());
+        let proof = prove::<MyConfig, _>(&config, &KeccakAir {}, &mut challenger, trace);
+
+        let mut challenger = Challenger::new(perm);
+        verify(&config, &KeccakAir {}, &mut challenger, &proof)
+    }
+}
