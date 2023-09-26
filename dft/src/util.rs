@@ -3,7 +3,7 @@ use alloc::vec;
 use p3_field::Field;
 use p3_matrix::dense::RowMajorMatrix;
 use p3_matrix::Matrix;
-use p3_maybe_rayon::{MaybeIntoParIter, ParallelIterator};
+use p3_maybe_rayon::{MaybeIntoParIter, ParallelIteratorMock};
 use p3_util::log2_strict_usize;
 
 pub fn reverse_slice_index_bits<F>(vals: &mut [F]) {

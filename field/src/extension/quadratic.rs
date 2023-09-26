@@ -7,7 +7,7 @@ use rand::prelude::Distribution;
 
 use crate::extension::BinomiallyExtendable;
 use crate::field::Field;
-use crate::{AbstractExtensionField, AbstractField};
+use crate::{AbstractExtensionField, AbstractField, ExtensionField};
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct QuadraticBef<F: BinomiallyExtendable<2>>(pub [F; 2]);
@@ -261,6 +261,8 @@ impl<F: BinomiallyExtendable<2>> AbstractExtensionField<F> for QuadraticBef<F> {
         self.0.as_ref()
     }
 }
+
+impl<F: BinomiallyExtendable<2>> ExtensionField<F> for QuadraticBef<F> {}
 
 impl<F: BinomiallyExtendable<2>> Distribution<QuadraticBef<F>> for Standard
 where

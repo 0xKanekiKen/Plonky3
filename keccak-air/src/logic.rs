@@ -1,4 +1,4 @@
-use p3_field::{AbstractField, PrimeField32};
+use p3_field::{AbstractField, PrimeField32, PrimeField64};
 
 pub(crate) fn xor<F: PrimeField32, const N: usize>(xs: [F; N]) -> F {
     xs.into_iter().fold(F::ZERO, |acc, x| {
@@ -27,4 +27,19 @@ pub(crate) fn andn<F: PrimeField32>(x: F, y: F) -> F {
 
 pub(crate) fn andn_gen<F: AbstractField>(x: F, y: F) -> F {
     (F::ONE - x) * y
+}
+
+pub(crate) fn xor_64<F: PrimeField64, const N: usize>(xs: [F; N]) -> F {
+    xs.into_iter().fold(F::ZERO, |acc, x| {
+        debug_assert!(x.is_zero() || x.is_one());
+        F::from_canonical_u64(acc.as_canonical_u64() ^ x.as_canonical_u64())
+    })
+}
+
+pub(crate) fn andn_64<F: PrimeField64>(x: F, y: F) -> F {
+    debug_assert!(x.is_zero() || x.is_one());
+    debug_assert!(y.is_zero() || y.is_one());
+    let x = x.as_canonical_u64();
+    let y = y.as_canonical_u64();
+    F::from_canonical_u64(!x & y)
 }

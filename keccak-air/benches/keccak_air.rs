@@ -2,7 +2,9 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use p3_baby_bear::BabyBear;
 use p3_challenger::DuplexChallenger;
 use p3_dft::Radix2Bowers;
+use p3_field::extension::quadratic::QuadraticBef;
 use p3_fri::{FriBasedPcs, FriConfigImpl, FriLdt};
+use p3_goldilocks::Goldilocks;
 use p3_keccak::Keccak256Hash;
 use p3_keccak_air::{generate_trace_rows, KeccakAir};
 use p3_ldt::QuotientMmcs;
@@ -29,7 +31,7 @@ fn keccak_air_benchmark(c: &mut Criterion) {
 }
 
 fn keccak_prover_bench(input: Vec<[u64; 25]>) -> Result<(), VerificationError> {
-    type Val = BabyBear;
+    type Val = Goldilocks;
     type Domain = Val;
     type Challenge = Val;
 
@@ -40,18 +42,18 @@ fn keccak_prover_bench(input: Vec<[u64; 25]>) -> Result<(), VerificationError> {
     let perm = Perm::new_from_rng(4, 22, mds, &mut thread_rng());
 
     // If we use Keccak256Hash, uncomment the following:
-    // type MyHash = SerializingHasher32<Val, Keccak256Hash>;
-    // let hash = MyHash::new(Keccak256Hash {});
+    type MyHash = SerializingHasher32<Val, Keccak256Hash>;
+    let hash = MyHash::new(Keccak256Hash {});
 
-    // type MyCompress = CompressionFunctionFromHasher<Val, MyHash, 2, 8>;
-    // let compress = MyCompress::new(hash);
+    type MyCompress = CompressionFunctionFromHasher<Val, MyHash, 2, 8>;
+    let compress = MyCompress::new(hash);
 
-    // If we use PoseidonHash, uncomment the following:
-    type MyHash = PaddingFreeSponge<Val, Perm, 16, 8, 8>;
-    let hash = MyHash::new(perm.clone());
+    // // If we use PoseidonHash, uncomment the following:
+    // type MyHash = PaddingFreeSponge<Val, Perm, 16, 8, 8>;
+    // let hash = MyHash::new(perm.clone());
 
-    type MyCompress = TruncatedPermutation<Val, Perm, 2, 8, 16>;
-    let compress = MyCompress::new(perm.clone());
+    // type MyCompress = TruncatedPermutation<Val, Perm, 2, 8, 16>;
+    // let compress = MyCompress::new(perm.clone());
 
     type MyMmcs = MerkleTreeMmcs<Val, [Val; 8], MyHash, MyCompress>;
     let mmcs = MyMmcs::new(hash, compress);

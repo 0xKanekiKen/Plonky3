@@ -1,6 +1,6 @@
 use core::marker::PhantomData;
 
-use p3_field::PrimeField32;
+use p3_field::PrimeField64;
 
 pub trait CryptographicHasher<Item: Clone, Out>: Clone {
     fn hash_iter<I>(&self, input: I) -> Out
@@ -35,7 +35,7 @@ impl<F, Inner> SerializingHasher32<F, Inner> {
 
 impl<F, Inner> CryptographicHasher<F, [F; 8]> for SerializingHasher32<F, Inner>
 where
-    F: PrimeField32,
+    F: PrimeField64,
     Inner: CryptographicHasher<u8, [u8; 32]>,
 {
     fn hash_iter<I>(&self, input: I) -> [F; 8]
@@ -45,7 +45,7 @@ where
         let inner_out = self.inner.hash_iter(
             input
                 .into_iter()
-                .flat_map(|x| x.as_canonical_u32().to_le_bytes()),
+                .flat_map(|x| x.as_canonical_u64().to_le_bytes()),
         );
 
         core::array::from_fn(|i| {
