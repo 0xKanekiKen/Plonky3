@@ -5,7 +5,9 @@ use core::iter::{Product, Sum};
 use core::mem::transmute;
 use core::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub, SubAssign};
 
-use p3_field::{AbstractField, AbstractionOf, Field, PackedField};
+use p3_field::{AbstractField, Field, PackedField};
+use rand::distributions::{Distribution, Standard};
+use rand::Rng;
 
 use crate::BabyBear;
 
@@ -373,6 +375,8 @@ impl Product for PackedBabyBearNeon {
 }
 
 impl AbstractField for PackedBabyBearNeon {
+    type F = BabyBear;
+
     const ZERO: Self = Self::broadcast(BabyBear::ZERO);
     const ONE: Self = Self::broadcast(BabyBear::ONE);
     const TWO: Self = Self::broadcast(BabyBear::TWO);
@@ -483,8 +487,6 @@ impl Product<BabyBear> for PackedBabyBearNeon {
     }
 }
 
-impl AbstractionOf<BabyBear> for PackedBabyBearNeon {}
-
 impl Div<BabyBear> for PackedBabyBearNeon {
     type Output = Self;
     #[allow(clippy::suspicious_arithmetic_impl)]
@@ -515,6 +517,13 @@ impl Sub<PackedBabyBearNeon> for BabyBear {
     #[inline]
     fn sub(self, rhs: PackedBabyBearNeon) -> PackedBabyBearNeon {
         PackedBabyBearNeon::from(self) - rhs
+    }
+}
+
+impl Distribution<PackedBabyBearNeon> for Standard {
+    #[inline]
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> PackedBabyBearNeon {
+        PackedBabyBearNeon(rng.gen())
     }
 }
 

@@ -2,13 +2,18 @@
 
 #![no_std]
 
+mod extension;
+
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
 use core::hash::{Hash, Hasher};
 use core::iter::{Product, Sum};
 use core::ops::{Add, AddAssign, Div, Mul, MulAssign, Neg, Sub, SubAssign};
 
-use p3_field::{AbstractField, Field, PrimeField, PrimeField64, TwoAdicField};
+use p3_field::{
+    exp_10540996611094048183, exp_u64_by_squaring, AbstractField, Field, PrimeField, PrimeField64,
+    TwoAdicField,
+};
 use p3_util::{assume, branch_hint};
 use rand::distributions::{Distribution, Standard};
 use rand::Rng;
@@ -80,6 +85,8 @@ impl Distribution<Goldilocks> for Standard {
 }
 
 impl AbstractField for Goldilocks {
+    type F = Self;
+
     const ZERO: Self = Self::new(0);
     const ONE: Self = Self::new(1);
     const TWO: Self = Self::new(2);
@@ -135,6 +142,14 @@ impl Field for Goldilocks {
         self.value == 0 || self.value == Self::ORDER_U64
     }
 
+    #[inline]
+    fn exp_u64_generic<AF: AbstractField<F = Self>>(val: AF, power: u64) -> AF {
+        match power {
+            10540996611094048183 => exp_10540996611094048183(val), // used to compute x^{1/7}
+            _ => exp_u64_by_squaring(val, power),
+        }
+    }
+
     fn try_inverse(&self) -> Option<Self> {
         if self.is_zero() {
             return None;
@@ -156,10 +171,12 @@ impl Field for Goldilocks {
         // compute base^111111 (6 ones)
         // repeatedly square t3 3 times and multiply by t3
         let t6 = exp_acc::<3>(t3, t3);
+        let t60 = t6.square();
+        let t7 = t60 * *self;
 
         // compute base^111111111111 (12 ones)
         // repeatedly square t6 6 times and multiply by t6
-        let t12 = exp_acc::<6>(t6, t6);
+        let t12 = exp_acc::<5>(t60, t6);
 
         // compute base^111111111111111111111111 (24 ones)
         // repeatedly square t12 12 times and multiply by t12
@@ -168,8 +185,7 @@ impl Field for Goldilocks {
         // compute base^1111111111111111111111111111111 (31 ones)
         // repeatedly square t24 6 times and multiply by t6 first. then square t30 and
         // multiply by base
-        let t30 = exp_acc::<6>(t24, t6);
-        let t31 = t30.square() * *self;
+        let t31 = exp_acc::<7>(t24, t7);
 
         // compute base^111111111111111111111111111111101111111111111111111111111111111
         // repeatedly square t31 32 times and multiply by t31
@@ -391,9 +407,7 @@ unsafe fn add_no_canonicalize_trashing_input(x: u64, y: u64) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use p3_field_testing::{
-        test_inverse, test_two_adic_coset_zerofier, test_two_adic_subgroup_zerofier,
-    };
+    use p3_field_testing::{test_field, test_two_adic_field};
 
     use super::*;
 
@@ -481,20 +495,12 @@ mod tests {
         //           = - 2^32 - 1
         let expected_result = -F::new(2_u64.pow(32)) - F::new(1);
         assert_eq!(y, expected_result);
+
+        assert_eq!(f.exp_u64(10540996611094048183).exp_const_u64::<7>(), f);
+        assert_eq!(y.exp_u64(10540996611094048183).exp_const_u64::<7>(), y);
+        assert_eq!(f_2.exp_u64(10540996611094048183).exp_const_u64::<7>(), f_2);
     }
 
-    #[test]
-    fn inverse() {
-        test_inverse::<Goldilocks>();
-    }
-
-    #[test]
-    fn two_adic_subgroup_zerofier() {
-        test_two_adic_subgroup_zerofier::<Goldilocks>();
-    }
-
-    #[test]
-    fn two_adic_coset_zerofier() {
-        test_two_adic_coset_zerofier::<Goldilocks>();
-    }
+    test_field!(crate::Goldilocks);
+    test_two_adic_field!(crate::Goldilocks);
 }
