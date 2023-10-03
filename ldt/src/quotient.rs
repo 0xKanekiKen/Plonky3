@@ -4,8 +4,8 @@ use core::marker::PhantomData;
 
 use itertools::{izip, Itertools};
 use p3_commit::Mmcs;
-use p3_field::{ExtensionField, Field, TwoAdicField};
-use p3_matrix::{Dimensions, Matrix, MatrixRows};
+use p3_field::{batch_multiplicative_inverse, ExtensionField, Field, TwoAdicField};
+use p3_matrix::{Dimensions, Matrix, MatrixRowSlices, MatrixRows};
 use p3_util::log2_strict_usize;
 
 /// A wrapper around an Inner MMCS, which transforms each inner value to
@@ -31,8 +31,12 @@ pub(crate) struct Opening<F> {
     pub(crate) values: Vec<F>,
 }
 
-impl<F: TwoAdicField, EF: ExtensionField<F>, Inner: Mmcs<F>> Mmcs<EF>
-    for QuotientMmcs<F, EF, Inner>
+impl<F, EF, Inner> Mmcs<EF> for QuotientMmcs<F, EF, Inner>
+where
+    F: TwoAdicField,
+    EF: ExtensionField<F>,
+    Inner: Mmcs<F>,
+    for<'a> Inner::Mat<'a>: MatrixRowSlices<F>,
 {
     type ProverData = Inner::ProverData;
     type Commitment = Inner::Commitment;
@@ -55,7 +59,7 @@ impl<F: TwoAdicField, EF: ExtensionField<F>, Inner: Mmcs<F>> Mmcs<EF>
                 let log2_height = log2_strict_usize(height);
                 let bits_reduced = log_max_height - log2_height;
                 let reduced_index = index >> bits_reduced;
-                let x = F::primitive_root_of_unity(log2_height).exp_u64(reduced_index as u64);
+                let x = F::two_adic_generator(log2_height).exp_u64(reduced_index as u64);
                 openings_for_mat
                     .iter()
                     .flat_map(|Opening { point, values }| {
@@ -82,12 +86,24 @@ impl<F: TwoAdicField, EF: ExtensionField<F>, Inner: Mmcs<F>> Mmcs<EF>
             .map(|(inner, openings)| {
                 let height = inner.height();
                 let log2_height = log2_strict_usize(height);
-                let g = F::primitive_root_of_unity(log2_height);
-                let subgroup = g.powers().take(height).collect();
+                let g = F::two_adic_generator(log2_height);
+                let subgroup = g.powers().take(height).collect_vec();
+
+                let denominators: Vec<EF> = subgroup
+                    .iter()
+                    .flat_map(|&x| {
+                        openings
+                            .iter()
+                            .map(move |opening| EF::from_base(x) - opening.point)
+                    })
+                    .collect();
+                let inv_denominators = batch_multiplicative_inverse(&denominators);
+
                 QuotientMatrix {
                     inner,
-                    subgroup,
                     openings,
+                    inv_denominators,
+                    _phantom_f: PhantomData,
                 }
             })
             .collect()
@@ -98,7 +114,7 @@ impl<F: TwoAdicField, EF: ExtensionField<F>, Inner: Mmcs<F>> Mmcs<EF>
         commit: &Self::Commitment,
         dimensions: &[Dimensions],
         index: usize,
-        opened_quotient_values: Vec<Vec<EF>>,
+        opened_quotient_values: &[Vec<EF>],
         proof: &Self::Proof,
     ) -> Result<(), Self::Error> {
         // quotient = (original - opened_eval) / (x - opened_point)
@@ -115,7 +131,7 @@ impl<F: TwoAdicField, EF: ExtensionField<F>, Inner: Mmcs<F>> Mmcs<EF>
                 let log_height = log2_strict_usize(dims.height);
                 let bits_reduced = log_max_height - log_height;
                 let reduced_index = index >> bits_reduced;
-                let x = F::primitive_root_of_unity(log_height).exp_u64(reduced_index as u64);
+                let x = F::two_adic_generator(log_height).exp_u64(reduced_index as u64);
 
                 let original_width = quotient_row.len() / openings.len();
                 let original_row_repeated: Vec<Vec<EF>> = quotient_row
@@ -134,20 +150,23 @@ impl<F: TwoAdicField, EF: ExtensionField<F>, Inner: Mmcs<F>> Mmcs<EF>
                 let original_row = get_repeated(original_row_repeated.into_iter());
                 to_base::<F, EF>(original_row)
             })
-            .collect();
+            .collect_vec();
 
         self.inner
-            .verify_batch(commit, dimensions, index, opened_original_values, proof)
+            .verify_batch(commit, dimensions, index, &opened_original_values, proof)
     }
 }
 
-pub struct QuotientMatrix<F, EF, Inner: MatrixRows<F>> {
+pub struct QuotientMatrix<F, EF, Inner: MatrixRowSlices<F>> {
     inner: Inner,
-    subgroup: Vec<F>,
     openings: Vec<Opening<EF>>,
+    /// For each row (associated with a subgroup element `x`), for each opening point,
+    /// this holds `1 / (x - opened_point)`.
+    inv_denominators: Vec<EF>,
+    _phantom_f: PhantomData<F>,
 }
 
-impl<F, EF, Inner: MatrixRows<F>> Matrix<EF> for QuotientMatrix<F, EF, Inner> {
+impl<F, EF, Inner: MatrixRowSlices<F>> Matrix<EF> for QuotientMatrix<F, EF, Inner> {
     fn width(&self) -> usize {
         self.inner.width() * self.openings.len()
     }
@@ -157,56 +176,55 @@ impl<F, EF, Inner: MatrixRows<F>> Matrix<EF> for QuotientMatrix<F, EF, Inner> {
     }
 }
 
-impl<F: Field, EF: ExtensionField<F>, Inner: MatrixRows<F>> MatrixRows<EF>
+impl<F: Field, EF: ExtensionField<F>, Inner: MatrixRowSlices<F>> MatrixRows<EF>
     for QuotientMatrix<F, EF, Inner>
 {
-    type Row<'a> = QuotientMatrixRow<'a, F, EF, <Inner::Row<'a> as IntoIterator>::IntoIter> where Inner: 'a;
+    type Row<'a> = QuotientMatrixRow<'a, F, EF> where Inner: 'a;
 
     fn row(&self, r: usize) -> Self::Row<'_> {
-        let inner_row = r / self.openings.len();
-        let opening_index = r % self.openings.len();
-
-        let x = self.subgroup[inner_row];
-        let opening = &self.openings[opening_index];
-        let inv_denominator: EF = (EF::from_base(x) - opening.point).inverse();
-
+        let num_openings = self.openings.len();
         QuotientMatrixRow {
-            opened_values: opening.values.iter(),
-            inner_row_iter: self.inner.row(inner_row).into_iter(),
-            inv_denominator,
-            _phantom_f: PhantomData,
+            openings: &self.openings,
+            inv_denominator: &self.inv_denominators[r * num_openings..(r + 1) * num_openings],
+            inner_row: self.inner.row_slice(r),
+            opening_index: 0,
+            inner_col_index: 0,
         }
     }
 }
 
-pub struct QuotientMatrixRow<'a, F, EF, InnerRowIter> {
-    opened_values: core::slice::Iter<'a, EF>,
-    inner_row_iter: InnerRowIter,
+pub struct QuotientMatrixRow<'a, F, EF> {
+    openings: &'a [Opening<EF>],
     /// `1 / (x - opened_point)`
-    inv_denominator: EF,
-    _phantom_f: PhantomData<F>,
+    inv_denominator: &'a [EF],
+    inner_row: &'a [F],
+    opening_index: usize,
+    inner_col_index: usize,
 }
 
-impl<'a, F, EF, InnerRowIter> Iterator for QuotientMatrixRow<'a, F, EF, InnerRowIter>
+impl<'a, F, EF> Iterator for QuotientMatrixRow<'a, F, EF>
 where
     F: Field,
     EF: ExtensionField<F>,
-    InnerRowIter: Iterator<Item = F>,
 {
     type Item = EF;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let opt_eval = self.inner_row_iter.next();
-        let opt_opened_value = self.opened_values.next();
-
-        if let (Some(eval), Some(opened_value)) = (opt_eval, opt_opened_value) {
-            let num: EF = EF::from_base(eval) - *opened_value;
-            Some(num * self.inv_denominator)
-        } else {
-            debug_assert!(opt_eval.is_none());
-            debug_assert!(opt_opened_value.is_none());
-            None
+        if self.inner_col_index == self.inner_row.len() {
+            self.opening_index += 1;
+            self.inner_col_index = 0;
         }
+        if self.opening_index == self.openings.len() {
+            return None;
+        }
+
+        let eval = self.inner_row[self.inner_col_index];
+        let opening = &self.openings[self.opening_index];
+        let opened_value = opening.values[self.inner_col_index];
+        let numerator: EF = EF::from_base(eval) - opened_value;
+        let result = numerator * self.inv_denominator[self.opening_index];
+        self.inner_col_index += 1;
+        Some(result)
     }
 }
 

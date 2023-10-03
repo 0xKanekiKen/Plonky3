@@ -1,35 +1,29 @@
-use core::marker::PhantomData;
-
 use itertools::Itertools;
 
 use crate::hasher::CryptographicHasher;
-use crate::permutation::ArrayPermutation;
+use crate::permutation::CryptographicPermutation;
 
 /// A padding-free, overwrite-mode sponge function.
 ///
 /// `WIDTH` is the sponge's rate plus the sponge's capacity.
 #[derive(Clone)]
-pub struct PaddingFreeSponge<T, P, const WIDTH: usize, const RATE: usize, const OUT: usize> {
+pub struct PaddingFreeSponge<P, const WIDTH: usize, const RATE: usize, const OUT: usize> {
     permutation: P,
-    _phantom_f: PhantomData<T>,
 }
 
-impl<T, P, const WIDTH: usize, const RATE: usize, const OUT: usize>
-    PaddingFreeSponge<T, P, WIDTH, RATE, OUT>
+impl<P, const WIDTH: usize, const RATE: usize, const OUT: usize>
+    PaddingFreeSponge<P, WIDTH, RATE, OUT>
 {
     pub fn new(permutation: P) -> Self {
-        Self {
-            permutation,
-            _phantom_f: PhantomData,
-        }
+        Self { permutation }
     }
 }
 
 impl<T, P, const WIDTH: usize, const RATE: usize, const OUT: usize> CryptographicHasher<T, [T; OUT]>
-    for PaddingFreeSponge<T, P, WIDTH, RATE, OUT>
+    for PaddingFreeSponge<P, WIDTH, RATE, OUT>
 where
     T: Default + Copy,
-    P: ArrayPermutation<T, WIDTH>,
+    P: CryptographicPermutation<[T; WIDTH]>,
 {
     fn hash_iter<I>(&self, input: I) -> [T; OUT]
     where

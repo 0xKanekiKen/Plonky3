@@ -2,7 +2,12 @@
 
 #![no_std]
 
+extern crate alloc;
+
 mod complex;
+mod dft;
+mod extension;
+mod radix_2_dit;
 
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
@@ -11,7 +16,13 @@ use core::iter::{Product, Sum};
 use core::ops::{Add, AddAssign, BitXorAssign, Div, Mul, MulAssign, Neg, Sub, SubAssign};
 
 pub use complex::*;
-use p3_field::{AbstractField, Field, PrimeField, PrimeField32, PrimeField64};
+pub use dft::Mersenne31Dft;
+pub use extension::*;
+use p3_field::{
+    exp_1717986917, exp_u64_by_squaring, AbstractField, Field, PrimeField, PrimeField32,
+    PrimeField64,
+};
+pub use radix_2_dit::Mersenne31ComplexRadix2Dit;
 use rand::distributions::{Distribution, Standard};
 use rand::Rng;
 
@@ -19,7 +30,7 @@ use rand::Rng;
 #[derive(Copy, Clone, Default)]
 pub struct Mersenne31 {
     /// Not necessarily canonical, but must fit in 31 bits.
-    value: u32,
+    pub(crate) value: u32,
 }
 
 impl Mersenne31 {
@@ -80,6 +91,8 @@ impl Distribution<Mersenne31> for Standard {
 }
 
 impl AbstractField for Mersenne31 {
+    type F = Self;
+
     const ZERO: Self = Self::new(0);
     const ONE: Self = Self::new(1);
     const TWO: Self = Self::new(2);
@@ -126,22 +139,14 @@ impl AbstractField for Mersenne31 {
     }
 
     fn from_wrapped_u64(n: u64) -> Self {
-        // TODO: Check whether Jacqui has a smarter way to do this...
-
-        let (lo, hi) = (n as u32 as u64, n >> 32);
-        // 2^32 = 2 (mod Mersenne31)
-        // t <= (2^32 - 1) + 2 * (2^32 - 1) = 3 * 2^32 - 3 = 6 * 2^31 - 3
-        let t = lo + 2 * hi;
-
-        const MASK: u64 = (1 << 31) - 1;
-        let (lo, hi) = ((t & MASK) as u32, (t >> 31) as u32);
-        // 2^31 = 1 (mod Mersenne31)
-        // lo < 2^31, hi < 6, so lo + hi < 2^32.
-        Self::from_wrapped_u32(lo + hi)
+        // NB: Experiments suggest that it's faster to just use the
+        // builtin remainder operator rather than split the input into
+        // 32-bit chunks and reduce using 2^32 = 2 (mod Mersenne31).
+        Self::from_canonical_u32((n % Self::ORDER_U64) as u32)
     }
 
     // Sage: GF(2^31 - 1).multiplicative_generator()
-    fn multiplicative_group_generator() -> Self {
+    fn generator() -> Self {
         Self::new(7)
     }
 }
@@ -156,7 +161,7 @@ impl Field for Mersenne31 {
 
     fn mul_2exp_u64(&self, exp: u64) -> Self {
         // In a Mersenne field, multiplication by 2^k is just a left rotation by k bits.
-        let exp = (exp % 31) as u8;
+        let exp = exp % 31;
         let left = (self.value << exp) & ((1 << 31) - 1);
         let right = self.value >> (31 - exp);
         let rotated = left | right;
@@ -172,20 +177,34 @@ impl Field for Mersenne31 {
         Self::new(rotated)
     }
 
+    #[inline]
+    fn exp_u64_generic<AF: AbstractField<F = Self>>(val: AF, power: u64) -> AF {
+        match power {
+            1717986917 => exp_1717986917(val), // used in x^{1/5}
+            _ => exp_u64_by_squaring(val, power),
+        }
+    }
+
     fn try_inverse(&self) -> Option<Self> {
         if self.is_zero() {
             return None;
         }
+
+        // From Fermat's little theorem, in a prime field `F_p`, the inverse of `a` is `a^(p-2)`.
+        // Here p-2 = 2147483646 = 1111111111111111111111111111101_2.
+        // Uses 30 Squares + 7 Multiplications => 37 Operations total.
+
         let p1 = *self;
-        let p2 = p1.square() * p1;
-        let p4 = p2.exp_power_of_2(2) * p2;
-        let p8 = p4.exp_power_of_2(4) * p4;
-        let p16 = p8.exp_power_of_2(8) * p8;
-        let p24 = p16.exp_power_of_2(8) * p8;
-        let p28 = p24.exp_power_of_2(4) * p4;
-        let p29 = p28.exp_power_of_2(1) * p1;
-        let p29_1 = p29.exp_power_of_2(2) * p1;
-        Some(p29_1)
+        let p101 = p1.exp_power_of_2(2) * p1;
+        let p1111 = p101.square() * p101;
+        let p11111111 = p1111.exp_power_of_2(4) * p1111;
+        let p111111110000 = p11111111.exp_power_of_2(4);
+        let p111111111111 = p111111110000 * p1111;
+        let p1111111111111111 = p111111110000.exp_power_of_2(4) * p11111111;
+        let p1111111111111111111111111111 = p1111111111111111.exp_power_of_2(12) * p111111111111;
+        let p1111111111111111111111111111101 =
+            p1111111111111111111111111111.exp_power_of_2(3) * p101;
+        Some(p1111111111111111111111111111101)
     }
 }
 
@@ -311,7 +330,7 @@ impl Div for Mersenne31 {
 #[cfg(test)]
 mod tests {
     use p3_field::{AbstractField, Field, PrimeField32};
-    use p3_field_testing::test_inverse;
+    use p3_field_testing::test_field;
 
     use crate::Mersenne31;
 
@@ -355,7 +374,16 @@ mod tests {
     }
 
     #[test]
-    fn inverse() {
-        test_inverse::<Mersenne31>();
+    fn exp_root() {
+        // Confirm that (x^{1/5})^5 = x
+
+        let m1 = F::from_canonical_u32(0x34167c58);
+        let m2 = F::from_canonical_u32(0x61f3207b);
+
+        assert_eq!(m1.exp_u64(1717986917).exp_const_u64::<5>(), m1);
+        assert_eq!(m2.exp_u64(1717986917).exp_const_u64::<5>(), m2);
+        assert_eq!(F::TWO.exp_u64(1717986917).exp_const_u64::<5>(), F::TWO);
     }
+
+    test_field!(crate::Mersenne31);
 }

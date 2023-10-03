@@ -47,10 +47,10 @@ fn keccak_prover_bench(input: Vec<[u64; 25]>) -> Result<(), VerificationError> {
     // let compress = MyCompress::new(hash);
 
     // If we use PoseidonHash, uncomment the following:
-    type MyHash = PaddingFreeSponge<Val, Perm, 16, 8, 8>;
+    type MyHash = PaddingFreeSponge<Perm, 16, 8, 8>;
     let hash = MyHash::new(perm.clone());
 
-    type MyCompress = TruncatedPermutation<Val, Perm, 2, 8, 16>;
+    type MyCompress = TruncatedPermutation<Perm, 2, 8, 16>;
     let compress = MyCompress::new(perm.clone());
 
     type MyMmcs = MerkleTreeMmcs<Val, [Val; 8], MyHash, MyCompress>;

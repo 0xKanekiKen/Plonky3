@@ -1,9 +1,11 @@
+use itertools::Itertools;
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_baby_bear::BabyBear;
+use p3_blake3::Blake3;
 use p3_challenger::DuplexChallenger;
-use p3_dft::Radix2Bowers;
+use p3_dft::Radix2DitParallel;
+use p3_field::Field;
 use p3_fri::{FriBasedPcs, FriConfigImpl, FriLdt};
-use p3_keccak::Keccak256Hash;
 use p3_ldt::QuotientMmcs;
 use p3_matrix::dense::RowMajorMatrix;
 use p3_matrix::MatrixRowSlices;
@@ -13,7 +15,8 @@ use p3_poseidon::Poseidon;
 use p3_symmetric::compression::CompressionFunctionFromHasher;
 use p3_symmetric::hasher::SerializingHasher32;
 use p3_uni_stark::{prove, verify, StarkConfigImpl, VerificationError};
-use rand::thread_rng;
+use rand::distributions::{Distribution, Standard};
+use rand::{thread_rng, Rng};
 use tracing_forest::ForestLayer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -42,6 +45,20 @@ impl<AB: AirBuilder> Air<AB> for MulAir {
     }
 }
 
+fn random_valid_trace<F: Field>(rows: usize) -> RowMajorMatrix<F>
+where
+    Standard: Distribution<F>,
+{
+    let mut rng = thread_rng();
+    let mut trace_values = vec![F::default(); rows * TRACE_WIDTH];
+    for (a, b, c) in trace_values.iter_mut().tuples() {
+        *a = rng.gen();
+        *b = rng.gen();
+        *c = *a * *b;
+    }
+    RowMajorMatrix::new(trace_values, TRACE_WIDTH)
+}
+
 #[test]
 fn test_prove_baby_bear() -> Result<(), VerificationError> {
     Registry::default()
@@ -61,8 +78,8 @@ fn test_prove_baby_bear() -> Result<(), VerificationError> {
     type Perm = Poseidon<Val, MyMds, 16, 5>;
     let perm = Perm::new_from_rng(4, 22, mds, &mut thread_rng()); // TODO: Use deterministic RNG
 
-    type MyHash = SerializingHasher32<Val, Keccak256Hash>;
-    let hash = MyHash::new(Keccak256Hash {});
+    type MyHash = SerializingHasher32<Val, Blake3>;
+    let hash = MyHash::new(Blake3);
 
     type MyCompress = CompressionFunctionFromHasher<Val, MyHash, 2, 8>;
     let compress = MyCompress::new(hash);
@@ -70,7 +87,7 @@ fn test_prove_baby_bear() -> Result<(), VerificationError> {
     type MyMmcs = MerkleTreeMmcs<Val, [Val; 8], MyHash, MyCompress>;
     let mmcs = MyMmcs::new(hash, compress);
 
-    type Dft = Radix2Bowers;
+    type Dft = Radix2DitParallel;
     let dft = Dft {};
 
     type Challenger = DuplexChallenger<Val, Perm, 16>;
@@ -83,8 +100,7 @@ fn test_prove_baby_bear() -> Result<(), VerificationError> {
     type Pcs = FriBasedPcs<MyFriConfig, MyMmcs, Dft, Challenger>;
     type MyConfig = StarkConfigImpl<Val, Domain, Challenge, Pcs, Dft, Challenger>;
 
-    let mut rng = thread_rng();
-    let trace = RowMajorMatrix::rand(&mut rng, HEIGHT, TRACE_WIDTH);
+    let trace = random_valid_trace::<Val>(HEIGHT);
     let pcs = Pcs::new(dft, 1, mmcs, ldt);
     let config = StarkConfigImpl::new(pcs, Dft {});
     let mut challenger = Challenger::new(perm.clone());
