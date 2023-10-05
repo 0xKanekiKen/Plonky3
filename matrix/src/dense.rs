@@ -3,7 +3,7 @@ use core::iter::Cloned;
 use core::slice;
 
 use p3_field::{ExtensionField, Field, PackedField};
-use p3_maybe_rayon::{IndexedParallelIterator, MaybeParChunksMut, ParallelIterator};
+use p3_maybe_rayon::{MaybeParChunksMut, ParallelIteratorMock};
 use rand::distributions::{Distribution, Standard};
 use rand::Rng;
 
@@ -51,7 +51,7 @@ impl<T> RowMajorMatrix<T> {
     pub fn row_chunks_mut(
         &mut self,
         chunk_rows: usize,
-    ) -> impl IndexedParallelIterator<Item = RowMajorMatrixViewMut<T>>
+    ) -> impl Iterator<Item = RowMajorMatrixViewMut<T>>
     where
         T: Send,
     {
@@ -288,7 +288,7 @@ impl<'a, T> RowMajorMatrixViewMut<'a, T> {
         self.values.chunks_exact_mut(self.width)
     }
 
-    pub fn par_rows_mut(&mut self) -> impl ParallelIterator<Item = &mut [T]>
+    pub fn par_rows_mut(&mut self) -> impl ParallelIteratorMock<Item = &mut [T]>
     where
         T: Send,
     {

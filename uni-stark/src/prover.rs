@@ -8,7 +8,7 @@ use p3_field::{
 };
 use p3_matrix::dense::RowMajorMatrix;
 use p3_matrix::{Matrix, MatrixGet};
-use p3_maybe_rayon::{IndexedParallelIterator, MaybeIntoParIter, ParallelIterator};
+use p3_maybe_rayon::{MaybeIntoParIter, ParallelIteratorMock};
 use p3_util::log2_strict_usize;
 use tracing::{info_span, instrument};
 

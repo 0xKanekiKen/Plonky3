@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use p3_field::{Field, Powers, TwoAdicField};
 use p3_matrix::dense::{RowMajorMatrix, RowMajorMatrixViewMut};
 use p3_matrix::Matrix;
-use p3_maybe_rayon::{IndexedParallelIterator, ParallelIterator};
+use p3_maybe_rayon::ParallelIteratorMock;
 use p3_util::log2_strict_usize;
 
 use crate::butterflies::dit_butterfly;
