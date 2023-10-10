@@ -72,7 +72,8 @@ where
                 })
                 .collect()
         });
-        self.mmcs.commit(ldes)
+
+        info_span!("trace commitments").in_scope(|| self.mmcs.commit(ldes))
     }
 }
 
