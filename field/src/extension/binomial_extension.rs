@@ -205,6 +205,7 @@ impl<F: BinomiallyExtendable<D>, const D: usize> Field for BinomialExtensionFiel
         match D {
             2 => Some(Self::from_base_slice(&qudratic_inv(&self.value, F::w()))),
             3 => Some(Self::from_base_slice(&cubic_inv(&self.value, F::w()))),
+            4 => Some(Self::from_base_slice(&quartic_inv(&self.value, F::w()))),
             _ => Some(self.frobenius_inv()),
         }
     }
@@ -394,6 +395,9 @@ where
             3 => Self {
                 value: cubic_mul(&a, &b, w).to_vec().try_into().unwrap(),
             },
+            4 => Self {
+                value: quartic_mul(&a, &b, w).to_vec().try_into().unwrap(),
+            },
             _ => {
                 let mut res = Self::default();
                 #[allow(clippy::needless_range_loop)]
@@ -539,6 +543,40 @@ fn qudratic_inv<F: Field>(a: &[F], w: F) -> [F; 2] {
     [a[0] * scalar, -a[1] * scalar]
 }
 
+fn quartic_inv<F: Field>(a: &[F], w: F) -> [F; 4] {
+    // Compute the multiplicative inverse by looking at `ExtElem` as a composite
+    // field and using the same basic methods used to invert complex
+    // numbers. We imagine that initially we have a numerator of `1`, and a
+    // denominator of `a`. `out = 1 / a`; We set `a'` to be a with the first
+    // and third components negated. We then multiply the numerator and the
+    // denominator by `a'`, producing `out = a' / (a * a')`. By construction
+    // `(a * a')` has `0`s in its first and third elements. We call this
+    // number, `b` and compute it as follows.
+    let mut b0 = a[0] * a[0] + w * (a[1] * (a[3] + a[3]) - a[2] * a[2]);
+    let mut b2 = a[0] * (a[2] + a[2]) - a[1] * a[1] + w * (a[3] * a[3]);
+    // Now, we make `b'` by inverting `b2`. When we muliply both sizes by `b'`, we
+    // get `out = (a' * b') / (b * b')`.  But by construction `b * b'` is in
+    // fact an element of `Elem`, call it `c`.
+    let c = b0 * b0 + w * b2 * b2;
+    // But we can now invert `C` direcly, and multiply by `a' * b'`:
+    // `out = a' * b' * inv(c)`
+    let ic = c.try_inverse().unwrap_or(F::zero());
+    // Note: if c == 0 (really should only happen if in == 0), our
+    // 'safe' version of inverse results in ic == 0, and thus out
+    // = 0, so we have the same 'safe' behavior for ExtElem.  Oh,
+    // and since we want to multiply everything by ic, it's
+    // slightly faster to pre-multiply the two parts of b by ic (2
+    // multiplies instead of 4).
+    b0 *= ic;
+    b2 *= ic;
+    [
+        a[0] * b0 + w * a[2] * b2,
+        -a[1] * b0 + w * a[3] * b2,
+        -a[0] * b2 + a[2] * b0,
+        a[1] * b2 - a[3] * b0,
+    ]
+}
+
 /// Section 11.3.6b in Handbook of Elliptic and Hyperelliptic Curve Cryptography.
 #[inline]
 fn cubic_inv<F: Field>(a: &[F], w: F) -> [F; 3] {
@@ -579,6 +617,28 @@ fn cubic_mul<AF: AbstractField>(a: &[AF], b: &[AF], w: AF::F) -> [AF; 3] {
     let c2 = (a[0].clone() + a[2].clone()) * (b[0].clone() + b[2].clone()) - a0_b0 - a2_b2 + a1_b1;
 
     [c0, c1, c2]
+}
+
+#[inline]
+fn quartic_mul<AF: AbstractField>(a: &[AF], b: &[AF], w: AF::F) -> [AF; 4] {
+    [
+        a[0].clone() * b[0].clone()
+            + AF::from_f(w)
+                * (a[1].clone() * b[3].clone()
+                    + a[2].clone() * b[2].clone()
+                    + a[3].clone() * b[1].clone()),
+        a[0].clone() * b[1].clone()
+            + a[1].clone() * b[0].clone()
+            + AF::from_f(w) * (a[2].clone() * b[3].clone() + a[3].clone() * b[2].clone()),
+        a[0].clone() * b[2].clone()
+            + a[1].clone() * b[1].clone()
+            + a[2].clone() * b[0].clone()
+            + AF::from_f(w) * (a[3].clone() * b[3].clone()),
+        a[0].clone() * b[3].clone()
+            + a[1].clone() * b[2].clone()
+            + a[2].clone() * b[1].clone()
+            + a[3].clone() * b[0].clone(),
+    ]
 }
 
 /// Section 11.3.6a in Handbook of Elliptic and Hyperelliptic Curve Cryptography.
