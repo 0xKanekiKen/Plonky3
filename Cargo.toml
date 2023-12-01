@@ -33,3 +33,7 @@ members = [
     "util",
     "uni-stark",
 ]
+
+[profile.release]
+codegen-units = 1
+lto = "fat"

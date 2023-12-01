@@ -39,3 +39,15 @@ where
         b.iter(|| black_box(black_box(x) * black_box(y)))
     });
 }
+
+pub fn benchmark_add<F: Field>(c: &mut Criterion, name: &str)
+where
+    Standard: Distribution<F>,
+{
+    let mut rng = rand::thread_rng();
+    let x = rng.gen::<F>();
+    let y = rng.gen::<F>();
+    c.bench_function(&format!("{} add", name), |b| {
+        b.iter(|| black_box(black_box(x) + black_box(y)))
+    });
+}
