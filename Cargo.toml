@@ -9,6 +9,7 @@ members = [
     "code",
     "commit",
     "dft",
+    "duo-stark",
     "field",
     "field-testing",
     "fri",
@@ -33,3 +34,7 @@ members = [
     "util",
     "uni-stark",
 ]
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
