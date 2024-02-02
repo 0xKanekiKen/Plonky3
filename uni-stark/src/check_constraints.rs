@@ -3,7 +3,7 @@ use p3_field::Field;
 use p3_matrix::dense::RowMajorMatrix;
 use p3_matrix::{Matrix, MatrixRowSlices};
 
-pub(crate) fn check_constraints<F, A>(air: &A, main: &RowMajorMatrix<F>)
+pub fn check_constraints<F, A>(air: &A, main: &RowMajorMatrix<F>)
 where
     F: Field,
     A: for<'a> Air<DebugConstraintBuilder<'a, F>>,

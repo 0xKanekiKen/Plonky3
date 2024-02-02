@@ -9,14 +9,14 @@ mod decompose;
 mod folder;
 mod proof;
 mod prover;
-mod symbolic_builder;
+pub mod symbolic_builder;
 mod symbolic_expression;
 mod symbolic_variable;
 mod verifier;
 mod zerofier_coset;
 
 #[cfg(debug_assertions)]
-mod check_constraints;
+pub mod check_constraints;
 
 pub use config::*;
 pub use decompose::*;
@@ -25,3 +25,6 @@ pub use proof::*;
 pub use prover::*;
 pub use verifier::*;
 pub use zerofier_coset::*;
+
+#[cfg(debug_assertions)]
+pub use check_constraints::*;

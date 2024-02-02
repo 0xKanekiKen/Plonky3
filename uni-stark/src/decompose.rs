@@ -6,12 +6,10 @@ use p3_field::{AbstractExtensionField, TwoAdicField};
 use p3_matrix::dense::RowMajorMatrix;
 use p3_maybe_rayon::prelude::*;
 use p3_util::log2_strict_usize;
-use tracing::instrument;
 
 /// Decompose the quotient polynomial into chunks using a generalization of even-odd decomposition.
 /// Then, arrange the results in a row-major matrix, so that each chunk of the decomposed polynomial
 /// becomes `D` columns of the resulting matrix, where `D` is the field extension degree.
-#[instrument(name = "decompose and flatten quotient", skip_all)]
 pub fn decompose_and_flatten<Val, Challenge>(
     quotient_poly: Vec<Challenge>,
     shift: Challenge,
